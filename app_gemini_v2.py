@@ -14,7 +14,8 @@
 import streamlit as st
 import json
 import os
-import streamlit.components.v1 as components
+import folium
+from streamlit_folium import st_folium
 import google.generativeai as genai
 
 # ────────────────────────────────────────────
@@ -23,17 +24,14 @@ import google.generativeai as genai
 # 우선순위: 1) Streamlit secrets (Streamlit Cloud 배포용)
 #           2) 환경변수 (로컬 개발용)
 GEMINI_API_KEY = ""
-KAKAO_REST_KEY = ""
 
 try:
     GEMINI_API_KEY = st.secrets["GEMINI_API_KEY"]
 except Exception:
     GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "")
 
-try:
-    KAKAO_REST_KEY = st.secrets["KAKAO_REST_KEY"]
-except Exception:
-    KAKAO_REST_KEY = os.environ.get("KAKAO_REST_KEY", "")
+if GEMINI_API_KEY:
+    genai.configure(api_key=GEMINI_API_KEY)
 
 if GEMINI_API_KEY:
     genai.configure(api_key=GEMINI_API_KEY)
@@ -510,55 +508,47 @@ def search_knowledge(query: str, forced_region: str = None):
     return context, found_topics
 
 # ────────────────────────────────────────────
-# 7. 카카오 Static Map REST API 헬퍼
+# 7. Folium 지도 헬퍼
 # ────────────────────────────────────────────
-import requests
+def render_inline_map(markers_data: list, center_lat: float, center_lng: float, height: int = 380):
+    """챗봇 답변 후 인라인 지도 표시 (Folium)"""
+    m = folium.Map(location=[center_lat, center_lng], zoom_start=13, tiles="CartoDB positron")
+    for item in markers_data:
+        color = item.get("color", "blue")
+        folium.Marker(
+            location=[item["lat"], item["lng"]],
+            popup=folium.Popup(f"<b>{item['name']}</b>", max_width=200),
+            tooltip=item["name"],
+            icon=folium.Icon(color=color, icon="info-sign")
+        ).add_to(m)
+    st_folium(m, width=None, height=height, returned_objects=[])
 
-def _build_static_map_url(center_lat: float, center_lng: float,
-                           markers: list, width: int = 800, height: int = 400, level: int = 3) -> str:
-    """
-    카카오 Static Map API URL 생성
-    markers: [{"lat": float, "lng": float, "label": str, "color": str}, ...]
-    color: red/blue/green/yellow/purple/black/gray/orange (카카오 지원 색상)
-    """
-    base = "https://map.kakaoapis.com/map/staticmap.png"
-    params = [
-        f"appkey={KAKAO_REST_KEY}",
-        f"center={center_lng},{center_lat}",
-        f"level={level}",
-        f"w={width}",
-        f"h={height}",
-        "format=png",
-        "maptype=roadmap",
-    ]
-    for i, m in enumerate(markers[:10]):  # 최대 10개
-        color = m.get("color", "red")
-        label = str(i + 1)
-        params.append(f"markers=type%3Apin%7Cpos%3A{m['lng']}%20{m['lat']}%7Ccolor%3A{color}%7Clabel%3A{label}")
-
-    return f"{base}?" + "&".join(params)
-
-def render_kakao_map(markers_data: list, center_lat: float, center_lng: float, height: int = 400):
-    """카카오 Static Map 이미지로 지도 표시"""
-    if not KAKAO_REST_KEY:
-        st.warning("⚠️ 카카오 REST API 키(KAKAO_REST_KEY)가 설정되지 않아 지도를 표시할 수 없습니다.")
-        return
-
-    url = _build_static_map_url(center_lat, center_lng, markers_data, width=800, height=height)
-    try:
-        resp = requests.get(url, timeout=5)
-        if resp.status_code == 200 and resp.headers.get("content-type", "").startswith("image"):
-            st.image(resp.content, use_column_width=True)
-            # 기관 목록 텍스트로 표시
-            if markers_data:
-                cols = st.columns(min(len(markers_data), 3))
-                for i, m in enumerate(markers_data[:9]):
-                    with cols[i % 3]:
-                        st.caption(f"**{i+1}** {m.get('name','')}")
-        else:
-            st.warning(f"지도 로드 실패 (status: {resp.status_code})")
-    except Exception as e:
-        st.warning(f"지도 로드 중 오류: {e}")
+def render_full_map(center_lat: float, center_lng: float, selected_region: str = None):
+    """전체 산단 + 지원센터 지도 (Folium, 탭2용)"""
+    m = folium.Map(location=[center_lat, center_lng], zoom_start=7, tiles="CartoDB positron")
+    for s in SANDAN_COORDS:
+        folium.CircleMarker(
+            location=[s["위도"], s["경도"]],
+            radius=7,
+            color="blue", fill=True, fill_color="blue", fill_opacity=0.7,
+            popup=folium.Popup(f"<b>🏭 {s['이름']}</b><br>{s['시도']}", max_width=200),
+            tooltip=s["이름"]
+        ).add_to(m)
+    for name, coords in SUPPORT_CENTER_COORDS.items():
+        folium.Marker(
+            location=[coords["위도"], coords["경도"]],
+            popup=folium.Popup(f"<b>🏢 {name}</b>", max_width=200),
+            tooltip=name,
+            icon=folium.Icon(color="green", icon="home", prefix="fa")
+        ).add_to(m)
+    legend_html = """
+    <div style="position:fixed;bottom:30px;left:30px;z-index:1000;
+                background:white;padding:10px 15px;border-radius:8px;
+                border:1px solid #ccc;font-size:13px;line-height:1.8;">
+        <b>범례</b><br>🔵 외국인전용 산단<br>🟢 외국인 지원센터
+    </div>"""
+    m.get_root().html.add_child(folium.Element(legend_html))
+    st_folium(m, width=None, height=600, returned_objects=[])
 
 # ────────────────────────────────────────────
 # 8. 챗봇 답변 후 인라인 지도 데이터 생성
@@ -566,63 +556,25 @@ def render_kakao_map(markers_data: list, center_lat: float, center_lng: float, h
 def make_inline_map(context: dict, center_lat: float, center_lng: float):
     """답변에 언급된 기관들의 마커 데이터 리스트 반환. 없으면 None"""
     markers = []
-
     if "외국인지원센터" in context:
         for item in context["외국인지원센터"]:
             name = item.get("기관명", "")
             coords = SUPPORT_CENTER_COORDS.get(name)
             if coords:
-                markers.append({
-                    "lat": coords["위도"], "lng": coords["경도"],
-                    "name": name, "color": "green"
-                })
-
+                markers.append({"lat": coords["위도"], "lng": coords["경도"], "name": name, "color": "green"})
     if "병원정보" in context:
         for item in context["병원정보"]:
             name = item.get("기관명", "")
             coords = HOSPITAL_COORDS.get(name)
             if coords:
-                markers.append({
-                    "lat": coords["위도"], "lng": coords["경도"],
-                    "name": name, "color": "red"
-                })
-
+                markers.append({"lat": coords["위도"], "lng": coords["경도"], "name": name, "color": "red"})
     if "출입국관서" in context:
         for item in context["출입국관서"]:
             name = item.get("기관명", "")
             coords = IMMIGRATION_COORDS.get(name)
             if coords:
-                markers.append({
-                    "lat": coords["위도"], "lng": coords["경도"],
-                    "name": name, "color": "blue"
-                })
-
+                markers.append({"lat": coords["위도"], "lng": coords["경도"], "name": name, "color": "blue"})
     return markers if markers else None
-
-# ────────────────────────────────────────────
-# 9. 전체 산단 지도 (탭2용) — 카카오 Static Map
-# ────────────────────────────────────────────
-def render_full_map(center_lat: float, center_lng: float, selected_region: str = None):
-    if not KAKAO_REST_KEY:
-        st.warning("⚠️ 카카오 REST API 키(KAKAO_REST_KEY)가 설정되지 않아 지도를 표시할 수 없습니다.")
-        return
-
-    markers = []
-    for s in SANDAN_COORDS:
-        markers.append({"lat": s["위도"], "lng": s["경도"], "name": s["이름"], "color": "blue"})
-    for name, coords in SUPPORT_CENTER_COORDS.items():
-        markers.append({"lat": coords["위도"], "lng": coords["경도"], "name": name, "color": "green"})
-
-    url = _build_static_map_url(center_lat, center_lng, markers, width=900, height=550, level=12)
-    try:
-        resp = requests.get(url, timeout=5)
-        if resp.status_code == 200 and resp.headers.get("content-type", "").startswith("image"):
-            st.image(resp.content, use_column_width=True)
-            st.caption("🔵 외국인전용 산단  |  🟢 외국인 지원센터")
-        else:
-            st.warning(f"지도 로드 실패 (status: {resp.status_code})")
-    except Exception as e:
-        st.warning(f"지도 로드 중 오류: {e}")
 
 # ────────────────────────────────────────────
 # 9. 시스템 프롬프트
@@ -732,7 +684,7 @@ with tab1:
                 map_info = st.session_state.map_data[assistant_turn]
                 if map_info:
                     with st.expander(T["map_expander"], expanded=True):
-                        render_kakao_map(map_info["markers"], map_info["lat"], map_info["lng"])
+                        render_inline_map(map_info["markers"], map_info["lat"], map_info["lng"])
             assistant_turn += 1
 
     user_input = example_clicked or st.chat_input(
@@ -792,7 +744,7 @@ E9 통계 기반 인사이트를 마지막에 한 줄 추가하세요."""
                     # 지도 바로 표시
                     if inline_markers:
                         with st.expander(T["map_expander"], expanded=True):
-                            render_kakao_map(inline_markers, sandan_info["위도"], sandan_info["경도"])
+                            render_inline_map(inline_markers, sandan_info["위도"], sandan_info["경도"])
 
                     with st.expander(T["data_expander"]):
                         st.json(context)
