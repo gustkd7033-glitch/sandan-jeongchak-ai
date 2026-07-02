@@ -23,7 +23,7 @@ import google.generativeai as genai
 # 우선순위: 1) Streamlit secrets (Streamlit Cloud 배포용)
 #           2) 환경변수 (로컬 개발용)
 GEMINI_API_KEY = ""
-KAKAO_JS_KEY = ""
+KAKAO_REST_KEY = ""
 
 try:
     GEMINI_API_KEY = st.secrets["GEMINI_API_KEY"]
@@ -31,9 +31,9 @@ except Exception:
     GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "")
 
 try:
-    KAKAO_JS_KEY = st.secrets["KAKAO_JS_KEY"]
+    KAKAO_REST_KEY = st.secrets["KAKAO_REST_KEY"]
 except Exception:
-    KAKAO_JS_KEY = os.environ.get("KAKAO_JS_KEY", "")
+    KAKAO_REST_KEY = os.environ.get("KAKAO_REST_KEY", "")
 
 if GEMINI_API_KEY:
     genai.configure(api_key=GEMINI_API_KEY)
@@ -510,78 +510,61 @@ def search_knowledge(query: str, forced_region: str = None):
     return context, found_topics
 
 # ────────────────────────────────────────────
-# 7. 카카오맵 임베드 헬퍼
+# 7. 카카오 Static Map REST API 헬퍼
 # ────────────────────────────────────────────
-def _kakao_marker_js(lat, lng, title, content_html, marker_color="#2E75B6"):
-    """카카오맵 마커 + 인포윈도우 하나를 생성하는 JS 조각을 반환"""
-    safe_content = content_html.replace("`", "'").replace("\n", " ")
-    return f"""
-    (function() {{
-        var pos = new kakao.maps.LatLng({lat}, {lng});
-        var marker = new kakao.maps.Marker({{ position: pos, map: map }});
-        var iw = new kakao.maps.InfoWindow({{
-            content: `<div style="padding:8px 10px;font-size:13px;line-height:1.5;max-width:240px;">{safe_content}</div>`
-        }});
-        kakao.maps.event.addListener(marker, 'click', function() {{ iw.open(map, marker); }});
-        bounds.extend(pos);
-        markerCount++;
-    }})();
-    """
+import requests
 
-def render_kakao_map(markers_js: list, center_lat: float, center_lng: float, height: int = 420, level: int = 6):
-    """카카오맵을 components.html로 렌더링. markers_js: _kakao_marker_js로 만든 JS 조각 리스트"""
-    if not KAKAO_JS_KEY:
-        st.warning("⚠️ 카카오맵 API 키(KAKAO_JS_KEY)가 설정되지 않아 지도를 표시할 수 없습니다. Secrets에 키를 추가해주세요.")
+def _build_static_map_url(center_lat: float, center_lng: float,
+                           markers: list, width: int = 800, height: int = 400, level: int = 3) -> str:
+    """
+    카카오 Static Map API URL 생성
+    markers: [{"lat": float, "lng": float, "label": str, "color": str}, ...]
+    color: red/blue/green/yellow/purple/black/gray/orange (카카오 지원 색상)
+    """
+    base = "https://map.kakaoapis.com/map/staticmap.png"
+    params = [
+        f"appkey={KAKAO_REST_KEY}",
+        f"center={center_lng},{center_lat}",
+        f"level={level}",
+        f"w={width}",
+        f"h={height}",
+        "format=png",
+        "maptype=roadmap",
+    ]
+    for i, m in enumerate(markers[:10]):  # 최대 10개
+        color = m.get("color", "red")
+        label = str(i + 1)
+        params.append(f"markers=type%3Apin%7Cpos%3A{m['lng']}%20{m['lat']}%7Ccolor%3A{color}%7Clabel%3A{label}")
+
+    return f"{base}?" + "&".join(params)
+
+def render_kakao_map(markers_data: list, center_lat: float, center_lng: float, height: int = 400):
+    """카카오 Static Map 이미지로 지도 표시"""
+    if not KAKAO_REST_KEY:
+        st.warning("⚠️ 카카오 REST API 키(KAKAO_REST_KEY)가 설정되지 않아 지도를 표시할 수 없습니다.")
         return
 
-    markers_block = "\n".join(markers_js)
-    html = f"""
-    <!DOCTYPE html>
-    <html>
-    <head>
-    <meta charset="utf-8">
-    <style>
-        body {{ margin: 0; padding: 0; }}
-        #map {{ width: 100%; height: {height}px; border-radius: 8px; }}
-    </style>
-    </head>
-    <body>
-    <div id="map"></div>
-    <script>
-    function initMap() {{
-        var container = document.getElementById('map');
-        var options = {{
-            center: new kakao.maps.LatLng({center_lat}, {center_lng}),
-            level: {level}
-        }};
-        var map = new kakao.maps.Map(container, options);
-        map.addControl(new kakao.maps.ZoomControl(), kakao.maps.ControlPosition.RIGHT);
-        var bounds = new kakao.maps.LatLngBounds();
-        var markerCount = 0;
-
-        {markers_block}
-
-        if (markerCount > 0) {{
-            map.setBounds(bounds);
-        }}
-    }}
-    </script>
-    <script type="text/javascript"
-        src="https://dapi.kakao.com/v2/maps/sdk.js?appkey={KAKAO_JS_KEY}&autoload=false">
-    </script>
-    <script>
-        kakao.maps.load(initMap);
-    </script>
-    </body>
-    </html>
-    """
-    components.html(html, height=height + 10)
+    url = _build_static_map_url(center_lat, center_lng, markers_data, width=800, height=height)
+    try:
+        resp = requests.get(url, timeout=5)
+        if resp.status_code == 200 and resp.headers.get("content-type", "").startswith("image"):
+            st.image(resp.content, use_column_width=True)
+            # 기관 목록 텍스트로 표시
+            if markers_data:
+                cols = st.columns(min(len(markers_data), 3))
+                for i, m in enumerate(markers_data[:9]):
+                    with cols[i % 3]:
+                        st.caption(f"**{i+1}** {m.get('name','')}")
+        else:
+            st.warning(f"지도 로드 실패 (status: {resp.status_code})")
+    except Exception as e:
+        st.warning(f"지도 로드 중 오류: {e}")
 
 # ────────────────────────────────────────────
 # 8. 챗봇 답변 후 인라인 지도 데이터 생성
 # ────────────────────────────────────────────
 def make_inline_map(context: dict, center_lat: float, center_lng: float):
-    """답변에 언급된 기관들의 카카오맵 마커 JS 조각 리스트를 반환. 없으면 None"""
+    """답변에 언급된 기관들의 마커 데이터 리스트 반환. 없으면 None"""
     markers = []
 
     if "외국인지원센터" in context:
@@ -589,92 +572,57 @@ def make_inline_map(context: dict, center_lat: float, center_lng: float):
             name = item.get("기관명", "")
             coords = SUPPORT_CENTER_COORDS.get(name)
             if coords:
-                content = f"<b>🏢 {name}</b><br>{item.get('주소','')}<br>{item.get('전화번호','')}"
-                markers.append(_kakao_marker_js(coords["위도"], coords["경도"], name, content))
+                markers.append({
+                    "lat": coords["위도"], "lng": coords["경도"],
+                    "name": name, "color": "green"
+                })
 
     if "병원정보" in context:
         for item in context["병원정보"]:
             name = item.get("기관명", "")
             coords = HOSPITAL_COORDS.get(name)
             if coords:
-                content = f"<b>🏥 {name}</b><br>{item.get('분류','')}<br>{item.get('참고','')}"
-                markers.append(_kakao_marker_js(coords["위도"], coords["경도"], name, content))
+                markers.append({
+                    "lat": coords["위도"], "lng": coords["경도"],
+                    "name": name, "color": "red"
+                })
 
     if "출입국관서" in context:
         for item in context["출입국관서"]:
             name = item.get("기관명", "")
             coords = IMMIGRATION_COORDS.get(name)
             if coords:
-                content = f"<b>🏛 {name}</b><br>{item.get('주소','')}<br>{item.get('전화번호','')}"
-                markers.append(_kakao_marker_js(coords["위도"], coords["경도"], name, content))
+                markers.append({
+                    "lat": coords["위도"], "lng": coords["경도"],
+                    "name": name, "color": "blue"
+                })
 
     return markers if markers else None
 
 # ────────────────────────────────────────────
-# 9. 전체 산단 지도 (탭2용) — 카카오맵
+# 9. 전체 산단 지도 (탭2용) — 카카오 Static Map
 # ────────────────────────────────────────────
 def render_full_map(center_lat: float, center_lng: float, selected_region: str = None):
-    if not KAKAO_JS_KEY:
-        st.warning("⚠️ 카카오맵 API 키(KAKAO_JS_KEY)가 설정되지 않아 지도를 표시할 수 없습니다. Secrets에 키를 추가해주세요.")
+    if not KAKAO_REST_KEY:
+        st.warning("⚠️ 카카오 REST API 키(KAKAO_REST_KEY)가 설정되지 않아 지도를 표시할 수 없습니다.")
         return
 
-    markers_block_parts = []
+    markers = []
     for s in SANDAN_COORDS:
-        content = f"<b>🏭 {s['이름']}</b><br>{s['시도']}"
-        markers_block_parts.append(_kakao_marker_js(s["위도"], s["경도"], s["이름"], content))
+        markers.append({"lat": s["위도"], "lng": s["경도"], "name": s["이름"], "color": "blue"})
     for name, coords in SUPPORT_CENTER_COORDS.items():
-        content = f"<b>🏢 {name}</b>"
-        markers_block_parts.append(_kakao_marker_js(coords["위도"], coords["경도"], name, content))
+        markers.append({"lat": coords["위도"], "lng": coords["경도"], "name": name, "color": "green"})
 
-    markers_block = "\n".join(markers_block_parts)
-    height = 600
-    html = f"""
-    <!DOCTYPE html>
-    <html>
-    <head>
-    <meta charset="utf-8">
-    <style>
-        body {{ margin: 0; padding: 0; }}
-        #map2 {{ width: 100%; height: {height}px; border-radius: 8px; }}
-        #legend {{
-            position: absolute; bottom: 14px; left: 14px; z-index: 10;
-            background: white; padding: 10px 14px; border-radius: 8px;
-            border: 1px solid #ddd; font-size: 13px; line-height: 1.8;
-            box-shadow: 0 1px 4px rgba(0,0,0,0.15);
-        }}
-        #wrap {{ position: relative; }}
-    </style>
-    </head>
-    <body>
-    <div id="wrap">
-        <div id="map2"></div>
-        <div id="legend"><b>범례</b><br>🔵 외국인전용 산단<br>🟢 외국인 지원센터</div>
-    </div>
-    <script>
-    function initMap() {{
-        var container = document.getElementById('map2');
-        var options = {{
-            center: new kakao.maps.LatLng({center_lat}, {center_lng}),
-            level: 12
-        }};
-        var map = new kakao.maps.Map(container, options);
-        map.addControl(new kakao.maps.ZoomControl(), kakao.maps.ControlPosition.RIGHT);
-        var bounds = new kakao.maps.LatLngBounds();
-        var markerCount = 0;
-
-        {markers_block}
-    }}
-    </script>
-    <script type="text/javascript"
-        src="https://dapi.kakao.com/v2/maps/sdk.js?appkey={KAKAO_JS_KEY}&autoload=false">
-    </script>
-    <script>
-        kakao.maps.load(initMap);
-    </script>
-    </body>
-    </html>
-    """
-    components.html(html, height=height + 60)
+    url = _build_static_map_url(center_lat, center_lng, markers, width=900, height=550, level=12)
+    try:
+        resp = requests.get(url, timeout=5)
+        if resp.status_code == 200 and resp.headers.get("content-type", "").startswith("image"):
+            st.image(resp.content, use_column_width=True)
+            st.caption("🔵 외국인전용 산단  |  🟢 외국인 지원센터")
+        else:
+            st.warning(f"지도 로드 실패 (status: {resp.status_code})")
+    except Exception as e:
+        st.warning(f"지도 로드 중 오류: {e}")
 
 # ────────────────────────────────────────────
 # 9. 시스템 프롬프트
