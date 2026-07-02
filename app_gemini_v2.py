@@ -536,9 +536,19 @@ def render_kakao_map(markers_js: list, center_lat: float, center_lng: float, hei
 
     markers_block = "\n".join(markers_js)
     html = f"""
-    <div id="map" style="width:100%;height:{height}px;border-radius:8px;"></div>
-    <script type="text/javascript" src="https://dapi.kakao.com/v2/maps/sdk.js?appkey={KAKAO_JS_KEY}"></script>
+    <!DOCTYPE html>
+    <html>
+    <head>
+    <meta charset="utf-8">
+    <style>
+        body {{ margin: 0; padding: 0; }}
+        #map {{ width: 100%; height: {height}px; border-radius: 8px; }}
+    </style>
+    </head>
+    <body>
+    <div id="map"></div>
     <script>
+    function initMap() {{
         var container = document.getElementById('map');
         var options = {{
             center: new kakao.maps.LatLng({center_lat}, {center_lng}),
@@ -554,7 +564,16 @@ def render_kakao_map(markers_js: list, center_lat: float, center_lng: float, hei
         if (markerCount > 0) {{
             map.setBounds(bounds);
         }}
+    }}
     </script>
+    <script type="text/javascript"
+        src="https://dapi.kakao.com/v2/maps/sdk.js?appkey={KAKAO_JS_KEY}&autoload=false">
+    </script>
+    <script>
+        kakao.maps.load(initMap);
+    </script>
+    </body>
+    </html>
     """
     components.html(html, height=height + 10)
 
@@ -610,16 +629,29 @@ def render_full_map(center_lat: float, center_lng: float, selected_region: str =
     markers_block = "\n".join(markers_block_parts)
     height = 600
     html = f"""
-    <div id="map2" style="width:100%;height:{height}px;border-radius:8px;"></div>
-    <div style="position:relative;">
-      <div style="position:absolute;bottom:14px;left:14px;z-index:10;background:white;
-                  padding:10px 14px;border-radius:8px;border:1px solid #ddd;
-                  font-size:13px;line-height:1.8;box-shadow:0 1px 4px rgba(0,0,0,0.15);">
-        <b>범례</b><br>🔵 외국인전용 산단<br>🟢 외국인 지원센터
-      </div>
+    <!DOCTYPE html>
+    <html>
+    <head>
+    <meta charset="utf-8">
+    <style>
+        body {{ margin: 0; padding: 0; }}
+        #map2 {{ width: 100%; height: {height}px; border-radius: 8px; }}
+        #legend {{
+            position: absolute; bottom: 14px; left: 14px; z-index: 10;
+            background: white; padding: 10px 14px; border-radius: 8px;
+            border: 1px solid #ddd; font-size: 13px; line-height: 1.8;
+            box-shadow: 0 1px 4px rgba(0,0,0,0.15);
+        }}
+        #wrap {{ position: relative; }}
+    </style>
+    </head>
+    <body>
+    <div id="wrap">
+        <div id="map2"></div>
+        <div id="legend"><b>범례</b><br>🔵 외국인전용 산단<br>🟢 외국인 지원센터</div>
     </div>
-    <script type="text/javascript" src="https://dapi.kakao.com/v2/maps/sdk.js?appkey={KAKAO_JS_KEY}"></script>
     <script>
+    function initMap() {{
         var container = document.getElementById('map2');
         var options = {{
             center: new kakao.maps.LatLng({center_lat}, {center_lng}),
@@ -631,7 +663,16 @@ def render_full_map(center_lat: float, center_lng: float, selected_region: str =
         var markerCount = 0;
 
         {markers_block}
+    }}
     </script>
+    <script type="text/javascript"
+        src="https://dapi.kakao.com/v2/maps/sdk.js?appkey={KAKAO_JS_KEY}&autoload=false">
+    </script>
+    <script>
+        kakao.maps.load(initMap);
+    </script>
+    </body>
+    </html>
     """
     components.html(html, height=height + 60)
 
