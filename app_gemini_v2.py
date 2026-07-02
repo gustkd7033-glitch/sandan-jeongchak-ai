@@ -411,25 +411,65 @@ TOPIC_KEYWORDS = {
     "지원센터": [
         "지원센터", "상담", "외국인센터", "복지센터", "센터", "어디", "도와",
         "문의", "민원", "통역", "상담원", "가까운 곳", "근처에 뭐",
-        "support", "center", "help", "trung tâm", "केन्द्र", "pusat", "ဌာန", "ศูนย์"
+        # 영어
+        "support", "center", "help",
+        # 베트남어
+        "trung tâm", "hỗ trợ", "gần đây",
+        # 네팔어
+        "केन्द्र", "सहयोग", "नजिक",
+        # 인도네시아어
+        "pusat", "dukungan", "terdekat",
+        # 미얀마어
+        "ဌာန", "အကူအညီ", "အနီး",
+        # 태국어
+        "ศูนย์", "ช่วยเหลือ", "ใกล้",
     ],
     "병원": [
         "병원", "의원", "응급", "산재", "다쳤", "다친", "아파", "아프", "진료", "치료",
         "수술", "사고", "허리", "손가락", "베였", "화상", "약", "응급실",
-        "hospital", "doctor", "clinic", "injury", "bệnh viện", "अस्पताल",
-        "rumah sakit", "ဆေးရုံ", "โรงพยาบาล"
+        # 영어
+        "hospital", "doctor", "clinic", "injury", "treat",
+        # 베트남어
+        "bệnh viện", "bị thương", "điều trị",
+        # 네팔어
+        "अस्पताल", "घाइते", "उपचार",
+        # 인도네시아어
+        "rumah sakit", "terluka", "mengobati",
+        # 미얀마어
+        "ဆေးရုံ", "ထိခိုက်", "ကုသ",
+        # 태국어
+        "โรงพยาบาล", "บาดเจ็บ", "รักษา",
     ],
     "은행": [
         "은행", "계좌", "통장", "돈", "급여", "월급", "송금", "환전", "체크카드", "카드",
-        "월급 받을", "월급 받는", "급여 받을", "급여 계좌",
-        "bank", "account", "salary", "wage", "transfer", "ngân hàng",
-        "बैंक", "rekening", "ဘဏ်", "ธนาคาร"
+        # 영어
+        "bank", "account", "salary", "wage", "transfer",
+        # 베트남어
+        "ngân hàng", "tài khoản", "mở tài khoản",
+        # 네팔어
+        "बैंक", "खाता", "खोल्न",
+        # 인도네시아어
+        "rekening", "membuka rekening",
+        # 미얀마어
+        "ဘဏ်", "အကောင့်", "ဖွင့်",
+        # 태국어
+        "ธนาคาร", "บัญชี", "เปิดบัญชี",
     ],
     "출입국": [
         "출입국", "비자", "사증", "체류", "연장", "외국인등록", "등록증", "재발급",
         "만료", "갱신", "기간", "신고",
-        "visa", "immigration", "extend", "extension", "expire", "thị thực",
-        "भिसा", "imigrasi", "ဗီဇာ", "วีซ่า"
+        # 영어
+        "visa", "immigration", "extend", "extension", "expire", "stay",
+        # 베트남어
+        "thị thực", "gia hạn", "lưu trú",
+        # 네팔어
+        "भिसा", "थप्न", "बसोबास",
+        # 인도네시아어
+        "imigrasi", "perpanjang", "masa tinggal",
+        # 미얀마어
+        "ဗီဇာ", "သက်တမ်းတိုး", "နေထိုင်ခွင့်",
+        # 태국어
+        "วีซ่า", "ต่อวีซ่า", "พำนัก", "ระยะเวลา",
     ],
 }
 
@@ -497,7 +537,7 @@ def render_kakao_map(markers_js: list, center_lat: float, center_lng: float, hei
     markers_block = "\n".join(markers_js)
     html = f"""
     <div id="map" style="width:100%;height:{height}px;border-radius:8px;"></div>
-    <script type="text/javascript" src="//dapi.kakao.com/v2/maps/sdk.js?appkey={KAKAO_JS_KEY}"></script>
+    <script type="text/javascript" src="https://dapi.kakao.com/v2/maps/sdk.js?appkey={KAKAO_JS_KEY}"></script>
     <script>
         var container = document.getElementById('map');
         var options = {{
@@ -578,7 +618,7 @@ def render_full_map(center_lat: float, center_lng: float, selected_region: str =
         <b>범례</b><br>🔵 외국인전용 산단<br>🟢 외국인 지원센터
       </div>
     </div>
-    <script type="text/javascript" src="//dapi.kakao.com/v2/maps/sdk.js?appkey={KAKAO_JS_KEY}"></script>
+    <script type="text/javascript" src="https://dapi.kakao.com/v2/maps/sdk.js?appkey={KAKAO_JS_KEY}"></script>
     <script>
         var container = document.getElementById('map2');
         var options = {{
